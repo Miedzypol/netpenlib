@@ -1,15 +1,16 @@
-import sys
 import os
-import requests
 import platform
 from concurrent.futures import ThreadPoolExecutor
 import subprocess
 import time
+import nmap
 
 # To people that will use this lib
 # all functions: netpenlib.ndscan() scans all devices in local network
 # netpenlib.ping(IP) pings ip adress and returns True or False based if host responded
 # netpenlib.swarm(IP,how much times, "one"/"infect") pings ip fastly. you can precise how much times it will ping the ip. ONE - only your device swarms the ip. INFECT - tries to remotely force pinging IP on other devices
+# netpenlib.osscan() scans and returns device OS, version and details   \
+# netpenlib.lnscan() same as ndscan but scans and gets details about ip / doesnt work good. stfu, it just doesn't work
 # thx
 
 def ndscan(base_ip="192.168.1", start=1, end=255, timeout_ms=100, max_threads=50):
@@ -114,3 +115,57 @@ def infect(command, base_ip="192.168.1", start=1, end=255, max_threads=250, time
         print(f"\nsending command: '{command}'")
         results = list(executor.map(execute_command, active_ips))
     print(f"success executions: {sum(results)}/{len(results)}")
+
+
+def osscan(ip):
+    try:
+        nm = nmap.PortScanner()
+        nm.scan(hosts=ip, arguments='-O -sV')
+        
+        if ip not in nm.all_hosts():
+            return None
+        
+        host = nm[ip]
+        os_info = host.get('osmatch', [])
+        if not os_info:
+            return None
+        
+        best_os_guess = os_info[0]
+        os_name = best_os_guess['name']
+        
+        version = "none"
+        service_info = host.get('tcp', {})
+        for port in service_info:
+            service = service_info[port]
+            if 'product' in service and 'version' in service:
+                version = f"{service['product']} {service['version']}"
+                break
+        
+        return {
+            "ip": ip,
+            "os": os_name,
+            "version": version,
+            "details": host.get('osfingerprint', 'no data')
+        }
+    
+    except Exception as e:
+        print(f"error while scanning {ip}: {e}")
+        return None
+
+def lnscan(ip_list):
+    results = []
+    for ip in ip_list:
+        print(f"\nscanning {ip}...")
+        result = osscan(ip)
+        
+        if result:
+            print(f"found host: {ip}")
+            print(f"   os: {result['os']}")
+            print(f"   version: {result['version']}")
+            results.append(result)
+        else:
+            print(f"Host {ip} does not respond or is offline.")
+        
+        time.sleep(0.05)
+    
+    return results
